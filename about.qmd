@@ -2,8 +2,4 @@
 title: "About"
 ---
 
-About this site
-
-```{r}
-1 + 1
-```
+This is a final project dedicated to PM566 Introduction to Health Data Science course at USC.

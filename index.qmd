@@ -1,11 +1,232 @@
 ---
-title: "PM566 Final Project"
+title: "Home Page"
+author: "Stella Zhou"
+format: 
+  html:
+    embed-resources: true
+editor: visual
 ---
 
-This is a Quarto website.
+## 1. Introduction
 
-To learn more about Quarto websites visit <https://quarto.org/docs/websites>.
+On May 11, 2023, the federal Public Health Emergency (PHE) for COVID-19 had officially been expired under section 319 of the Public Health Service (PHS) Act. Over the last two years, The COVID-19 pandemic, which swept across the globe in early 2020, has posed an unprecedented challenge to public health systems, economies, and daily life. As the world grappled with the profound impact of the virus, the development and deployment of effective vaccines emerged as a critical pillar in the fight against this novel coronavirus. Within the United States, each state faced unique challenges and opportunities in administering vaccines, reflecting variations in population density, healthcare infrastructure, and sociodemographic factors. California, as one of the most populous states in the nation, has been a focal point of the pandemic response. With urban centers, rural areas, and diverse communities, California's experience with COVID-19 and its vaccination efforts provide a rich case study for understanding the dynamics of vaccine distribution, uptake, and public health outcomes.
+
+The question of interest in this project is twofold: How have COVID-19 vaccination rates varied by county in California since the initial implementation, and what factors are associated with these vaccination rates? This inquiry is not only relevant for evaluating the effectiveness of vaccination campaigns but also for identifying disparities and potential areas for improvement in public health strategies. Analyzing vaccination rates across California's counties can shed light on the impact of demographic, socioeconomic, and healthcare-related variables on vaccine coverage.
+
+In this data analysis, county-level data is explored to understand the overall trend of cases, deaths, and vaccination rates over the two years, the extent to which communities have been reached, and the determinants of their vaccination rates.
+
+## 2. Methods
+
+### Downloading Data
+
+The data sets used in this project are obtained from California Health and Human Services. [`vac`](https://data.chhs.ca.gov/dataset/covid-19-post-vaccination-infection-data) refers to COVID-19 Post-Vaccination Infection Data (ARCHIVED) and [`death`](https://data.chhs.ca.gov/dataset/covid-19-time-series-metrics-by-county-and-state) refers to COVID-19 Cases Deaths Tests Data Dictionary (ARCHIVED). [`covid_income`](https://data.ca.gov/dataset/income-limits-by-county) refers to Income Limits by County.
 
 ```{r}
-1 + 1
+#| warning: false
+library(data.table)
+library(dplyr)
+library(dtplyr)
+library(tidyverse)
+library(lubridate)
+vac <- read.csv("vac.csv")
+death <- read.csv("death.csv")
+covid_income <- fread("income.csv", select = c("county", "AMI"))
+
 ```
+
+### Data Wrangling & EDA
+
+```{r}
+#| output: false
+dim(death)
+dim(vac)
+dim(covid_income)
+str(death)
+str(vac)
+str(covid_income)
+```
+
+By looking at the two data tables, the cases&deaths have more observations than the vaccine dataset. The entry for the vaccine set starts on 2020-01-05, much earlier than the first case&death entry, however, the real first dose initiated 2020-07-27. Additionally, date and county is named different in both sets and needs to be unified. Date also needs to be converted to date format.
+
+```{r}
+death$date <- as.Date(death$date, "%Y-%m-%d")
+vac$administered_date <- as.Date(vac$administered_date,"%Y-%m-%d")
+
+death <-
+  death %>% mutate(county = area)
+
+vac <-
+  vac %>% mutate(date = administered_date)
+
+vac1 <- vac
+vac1$county <-replace(vac$county, vac$county=="All CA Counties","California")
+```
+
+The datasets are merged by date and county and NAs are filtered. The data is further subseted into `covid_county` and `covid_CA` for further analysis. New variables are created for further analysis:
+
+1.  `cum_dose_pp`: cumulative total dose divided by the population in each county, in other words, average number of doses per person.
+2.  `percent_vacc`: cumulative fully vaccinated divided by population, in other words, vaccination rate.
+
+```{r}
+covid_merge = merge(x = death,y = vac1, by= c("date","county"), all=TRUE)
+covid_merge <- covid_merge %>% 
+  filter(!is.na(county))
+```
+
+```{r}
+covid_county <- 
+  covid_merge %>%
+  filter (county != "All CA and Non-CA Counties" & 
+            county != "All CA Counties" &
+            county != "California" &
+            county !="Out of state"& 
+            county !="Outside California"& 
+            county !="Unknown")
+
+covid_county <- covid_county %>%
+  mutate(cum_dose_pp = (cumulative_total_doses/population),
+         percent_vacc = (cumulative_fully_vaccinated/population))
+```
+
+```{r}
+covid_CA <- 
+  covid_merge %>%
+  filter (county == "California")
+```
+
+Since the cumulative value of all variables are the highest on the last day of entry, I subseted `covid_county1` to be the data set corresponding to the last day of entry, in order to obtain summary statistics. Furthermore, the county level median income dataset is merged in `covid_county1`.
+
+```{r}
+covid_county <- data.table(covid_county)
+covid_county1 <- covid_county[!is.na(percent_vacc)]
+covid_county1 <-
+  covid_county1 %>%
+  filter(date==as.Date("2023-05-09"))
+
+covid_county1= merge(x=covid_county1, y=covid_income, by=c("county"),all=TRUE)
+```
+
+## Preliminary Results
+
+### Part 1. Summary tables
+
+```{r}
+covid_county %>%
+  group_by(county) %>%
+  filter(date >= as.Date("2020-02-01")) %>%
+  summarise(Cases_mean = mean(cases,na.rm = TRUE),
+            Cases_max = max(cases,na.rm = TRUE),
+            Cases_sd = sd(cases,na.rm = TRUE),
+            Deaths_mean = mean(deaths,na.rm = TRUE),
+            Deaths_max = max(deaths,na.rm = TRUE),
+            Deaths_sd = sd(deaths,na.rm = TRUE),
+            Population = mean(population,na.rm = TRUE),
+            Dose_mean = mean(total_doses,na.rm = TRUE),
+            Doses_max = max(total_doses,na.rm = TRUE),
+            Doses_sd = sd(total_doses,na.rm = TRUE)) %>% 
+  knitr::kable(col.names = c("County", 
+                             "Mean Cases", 
+                             "Max Cases", 
+                             "SD Cases",
+                             "Mean Deaths", 
+                             "Max Deaths", 
+                             "SD Deaths",
+                             "Population", 
+                             "Mean Doses", 
+                             "Max Doses", 
+                             "SD Doses"), digits = 1, "pipe", 
+               caption = "Table 1. Summary Statistics for Counties in California (2020-02-01 to 2023-05-09)")
+```
+
+Table 1. provides summary statistics for cases, deaths, and daily doses for counties in California. (Note that the minimum values were all 0 therefore not included in the summary.) Based on the table, counties with higher population have more cases, deaths, and daily doses in general, which is expected due to the nature of infectious diseases. One limitation to this analysis is that the population for each county had remained the same over the 2 years in the data set.
+
+```{r}
+covid_top5 <- covid_county1[rank(-percent_vacc) <=5]
+covid_top5 <- covid_top5[order(-percent_vacc)]
+covid_top5[,list(date, county,population,cumulative_cases,cumulative_deaths,cumulative_total_doses,percent_vacc,AMI)]
+```
+
+```{r}
+covid_bot5 <- covid_county1[rank(-percent_vacc) >=54]
+covid_bot5 <- covid_bot5[order(percent_vacc)]
+covid_bot5[,list(date, county,population,cumulative_cases,cumulative_deaths,cumulative_total_doses,percent_vacc,AMI)]
+```
+
+Table 2 and 3 provides detailed statistics on the 5 counties with the highest vaccination rates and the lowest rates. The top five counties are Imperial, Marin, San Mateo, Santa Clara, and San Fransisco. The lowest are Lassen, Modoc, Tehama, Trinity, and Kings. Figure 1. below shows the fully vaccinated percent for all counties in detail. This brings out the question of what factors are associated with the difference in vaccination rates.
+
+```{r fig.height=7}
+covid_county1 %>%
+  ggplot(aes(y = reorder(county, percent_vacc), x = percent_vacc)) +
+  geom_bar(stat = "identity") +
+  labs(y = "County", x = "Percent Fully Vaccinated by 2023-05-09") +
+  theme(legend.position = "none") +
+  ggtitle("Figure 1. Percent Fully Vaccinated by 2023-05-09 (ranked by County)")
+```
+
+### Part 2. Visualization of cumulative dose over time by counties
+
+```{r fig.height=6}
+#| warning: false
+library(ggplot2)
+covid_county %>%
+  ggplot(mapping=aes(x = date, y = cum_dose_pp, color = county, na.rm = TRUE)) +
+  geom_line() + geom_text(data=subset(covid_county, date=="2023-05-09"), aes(label=county),hjust=-.1) +
+  scale_x_date(name="Date", limits = as.Date(c("2020-12-09", "2023-09-09"))) +
+  scale_y_continuous(name="Cumulative Total Dose per Population", breaks = seq(0,3,by=1)) + 
+  theme(legend.position="none") +
+  ggtitle("Figure 2. Cumulative Total Doses per Population ")
+```
+
+Figure 2. shows the cumulative dose (standardized by population) over time by counties. We can observe that there are three visible inclines in cumulative doses, and approached plateau around April 2021, January 2022, and December 2022. The three sections probably corresponded to the initial outbreak for the alpha variant, the following Delta variant in July 2021 and Omicron BA.1 variant in December 2021, and Omicron BA.2, XBB variants in summer 2022. We can observe similar rankings of cumulative total dose, by counties, to the results in Figure 1.
+
+### Part 3. Time series comparison of cases, deaths, and total doses in California
+
+```{r}
+p_case <-
+  covid_CA %>%
+  ggplot(mapping=aes(x = date, y = cases, na.rm = TRUE)) +
+  geom_line() + scale_x_date(limits = as.Date(c("2020-01-01", "2023-05-13"))) 
+p_death <-
+  covid_CA %>%
+  ggplot(mapping=aes(x = date, y = deaths, na.rm = TRUE)) +
+  geom_line() + scale_x_date(limits = as.Date(c("2020-01-01", "2023-05-13"))) + scale_y_continuous(breaks = seq(0, 1000, by = 500))
+p_vac <-
+  covid_CA %>%
+  ggplot(mapping=aes(x = date, y = total_doses, na.rm = TRUE)) +
+  geom_line() + scale_x_date(limits = as.Date(c("2020-01-01", "2023-05-13")))
+```
+
+```{r fig.height=10}
+#| warning: false
+library(grid)
+title <- textGrob("Title",gp=gpar(fontsize=50))
+grid.newpage()
+grid.draw(rbind(ggplotGrob(p_case), ggplotGrob(p_death), ggplotGrob(p_vac), size = "first"))
+```
+
+Figure 3. shows a clearer picture of cases, deaths, and daily doses by date. Note that there is huge daily fluctuation because there are limited testing and vaccine service on weekends.
+
+### Part 4 Association between vaccination rate and median income
+
+```{r}
+#| warning: false
+covid_county1 %>%
+  ggplot(mapping=aes(x = AMI, y = percent_vacc, na.rm = TRUE)) +
+  geom_point() +  geom_smooth(method = "lm", color='red') +
+  labs(x = "Area Median Income", y = "Percent Fully Vaccinated") +
+  ggtitle("Figure 4. Area Median Income by Percent Fully Vaccinated by 2023-05-09")
+```
+
+Figure 4. shows the association between median income and percent fully vaccinated in all counties. Overall, higher median income is associated with higher vaccination rates. Notably, the influencial point at the top left corner is Imperial County.
+
+## Conclusion
+
+From the preliminary results, I have witnessed the difference in the impact of COVID-19 pandemic on communities in California. From Tabel 1, counties with densely populated urban centers, such as Los Angeles County, have borne the brunt of the virus's rapid transmission. From table 2 and 3, it is evident counties with the highest vaccination rates share a similar trait -- they generally the wealthiest counties in California. And not surprisingly, some counties on the bottom of the list also have the lowest incomes, and are more rural.
+
+Noticeably, although Imperial County ranks as the second highest on the vaccination rate list, it also has the much lower income compared to other counties. Some [articles](https://www.nytimes.com/2021/12/13/us/imperial-county-covid-vaccination-rate.html) cautioned that vaccination rate may have been boosted by Americans who live in Mexico crossing the border to get their shots, but the testing of this hypothesis is beyong the scope of this project. It is also worth noticing that Lassen County, despite having the lowest vaccination rate, was especially lower than the second least vaccinated Modoc county. Some [articles](https://www.lassennews.com/lassen-county-health-and-social-services-issues-statement-on-lassen-county-vaccination-rate/) suggest that it is due to it high incarcerated population and having no jurisdiction over their COVID-19 mitigation decisions, actions, and record keeping.
+
+In contrast to densely populated urban centers, rural and less densely populated areas have faced unique challenges, possibly due to limited access to healthcare facilities and vaccine distribution. Therefore, further analysis investigates whether median income is associated with vaccination rates. Figure 4 provides evidence and shows that higher median income is associated with higher vaccination rates
+
+When looking at the California as a whole, Figure 2 and 3 demonstrates that vaccination efforts have played a significant role in reducing both cases and deaths, but the emergence of variants has periodically led to case surges.
+
+In moving forward, it is imperative that the lessons learned from the differential impact of COVID-19 on California's counties inform future public health planning. This means addressing the unique needs and vulnerabilities of each region and ensuring that healthcare resources are distributed equitably. It also necessitates continued efforts to promote vaccine access, education, and outreach to address disparities in vaccination rates.

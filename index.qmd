@@ -290,3 +290,5 @@ In contrast to densely populated urban centers, rural and less densely populated
 In summary, while population density is a crucial factor in understanding the dynamics of COVID-19 transmission, it is equally important to consider the overall population size, public health measures, and socio-economic factors to comprehend the variations in cumulative cases among different counties in California.
 
 In moving forward, it is imperative that the lessons learned from the differential impact of COVID-19 on California's counties inform future public health planning. This means addressing the unique needs and vulnerabilities of each region and ensuring that healthcare resources are distributed equitably. It also necessitates continued efforts to promote vaccine access, education, and outreach to address disparities in vaccination rates.
+
+Download my full report here.

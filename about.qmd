@@ -1,5 +1,0 @@
----
-title: "About"
----
-
-This is a final project dedicated to PM566 Introduction to Health Data Science course at USC.

@@ -4,5 +4,11 @@
   },
   "about.qmd": {
     "about.html": "2ae2003d"
+  },
+  "source.qmd": {
+    "source.html": "22cc1882"
+  },
+  "appendix.qmd": {
+    "appendix.html": "a65aa335"
   }
 }

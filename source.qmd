@@ -1,0 +1,224 @@
+---
+title: "Source Code"
+---
+
+```{r}
+#| output: false
+#| warning: false
+# loading libraries & data files
+if(!require(plotly)) install.packages("plotly", repos = "http://cran.us.r-project.org")
+if(!require(knitr)) install.packages("knitr")
+if(!require(DT)) install.packages("DT")
+library(plotly)
+library(knitr)
+library(DT)
+
+library(data.table)
+library(dplyr)
+library(dtplyr)
+library(tidyverse)
+library(lubridate)
+vac <- read.csv("vac.csv")
+death <- read.csv("death.csv")
+covid_income <- fread("income.csv", select = c("county", "AMI"))
+density <- read.csv("density.csv")
+```
+
+```{r}
+#| output: false
+#| warning: false
+# Check dimensions
+dim(death)
+dim(vac)
+dim(covid_income)
+str(death)
+str(vac)
+str(covid_income)
+```
+
+```{r}
+#| output: false
+# Wrangling + Merging datasets
+death$date <- as.Date(death$date, "%Y-%m-%d")
+vac$administered_date <- as.Date(vac$administered_date,"%Y-%m-%d")
+
+death <-
+  death %>% mutate(county = area)
+
+vac <-
+  vac %>% mutate(date = administered_date)
+
+vac1 <- vac
+vac1$county <-replace(vac$county, vac$county=="All CA Counties","California")
+```
+
+```{r}
+#| output: false
+# More wrangling
+covid_merge = merge(x = death,y = vac1, by= c("date","county"), all=TRUE)
+covid_merge <- covid_merge %>% 
+  filter(!is.na(county))
+
+covid_county <- 
+  covid_merge %>%
+  filter (county != "All CA and Non-CA Counties" & 
+            county != "All CA Counties" &
+            county != "California" &
+            county !="Out of state"& 
+            county !="Outside California"& 
+            county !="Unknown")
+
+covid_county <- covid_county %>%
+  mutate(cum_dose_pp = (cumulative_total_doses/population),
+         percent_vacc = (cumulative_fully_vaccinated/population))
+
+covid_CA <- 
+  covid_merge %>%
+  filter (county == "California")
+
+covid_county <- data.table(covid_county)
+covid_county1 <- covid_county[!is.na(percent_vacc)]
+covid_county1 <-
+  covid_county1 %>%
+  filter(date==as.Date("2023-05-09"))
+
+covid_county1= merge(x=covid_county1, y=covid_income, by=c("county"),all=TRUE)
+covid_county1= merge(x=covid_county1, y=density, by=c("county"),all=TRUE)
+covid_county1 <- covid_county1 %>% mutate(pop_density = (population/Area))
+```
+
+```{r}
+#| output: false
+# Summary Statistics for Counties in California 
+covid_county %>%
+  group_by(county) %>%
+  filter(date >= as.Date("2020-02-01")) %>%
+  summarise(Cases_mean = mean(cases,na.rm = TRUE),
+            Cases_max = max(cases,na.rm = TRUE),
+            Cases_sd = sd(cases,na.rm = TRUE),
+            Deaths_mean = mean(deaths,na.rm = TRUE),
+            Deaths_max = max(deaths,na.rm = TRUE),
+            Deaths_sd = sd(deaths,na.rm = TRUE),
+            Population = mean(population,na.rm = TRUE),
+            Dose_mean = mean(total_doses,na.rm = TRUE),
+            Doses_max = max(total_doses,na.rm = TRUE),
+            Doses_sd = sd(total_doses,na.rm = TRUE)) %>% 
+  knitr::kable(col.names = c("County", 
+                             "Mean Cases", 
+                             "Max Cases", 
+                             "SD Cases",
+                             "Mean Deaths", 
+                             "Max Deaths", 
+                             "SD Deaths",
+                             "Population", 
+                             "Mean Doses", 
+                             "Max Doses", 
+                             "SD Doses"), digits = 1, "pipe", 
+               caption = "Table 1. Summary Statistics for Counties in California (2020-02-01 to 2023-05-09)")
+```
+
+```{r}
+#| output: false
+# Top 5 vaccinated counties in California
+covid_top5 <- covid_county1[rank(-percent_vacc) <=5]
+covid_top5 <- covid_top5[order(-percent_vacc)]
+
+covid_top5[,list(county,population,cumulative_cases,cumulative_deaths,cumulative_total_doses,percent_vacc,AMI)]%>% 
+  knitr::kable(col.names = c("County", 
+                             "Population", 
+                             "Cumulative Cases", 
+                             "Cumulative Deaths",
+                             "Cumulative Total Doses", 
+                             "Percent vaccinated", 
+                             "AMI"), digits = 1, "pipe", 
+               caption = "Table 2a. Top 5 vaccinated counties in California (as of 2023-05-09)")
+
+# Top 5 least vaccinated counties in California
+covid_bot5 <- covid_county1[rank(-percent_vacc) >=54]
+covid_bot5 <- covid_bot5[order(percent_vacc)]
+covid_bot5[,list(county,population,cumulative_cases,cumulative_deaths,cumulative_total_doses,percent_vacc,AMI)]%>% 
+  knitr::kable(col.names = c("County", 
+                             "Population", 
+                             "Cumulative Cases", 
+                             "Cumulative Deaths",
+                             "Cumulative Total Doses", 
+                             "Percent vaccinated", 
+                             "AMI"), digits = 1, "pipe", 
+               caption = "Table 2b. Top 5 least vaccinated counties in California (as of 2023-05-09)")
+```
+
+```{r fig.height=7}
+#| output: false
+# Percent Fully Vaccinated by 2023-05-09
+covid_county1 %>%
+  ggplot(aes(y = reorder(county, percent_vacc), x = percent_vacc)) +
+  geom_bar(stat = "identity") +
+  labs(y = "County", x = "Percent Fully Vaccinated by 2023-05-09") +
+  theme(legend.position = "none") +
+  ggtitle("Figure 1. Percent Fully Vaccinated by 2023-05-09 (ranked by County)")
+```
+
+```{r fig.height=6}
+#| warning: false
+#| output: false
+# Cumulative Total Doses per Population
+library(ggplot2)
+covid_county %>%
+  ggplot(mapping=aes(x = date, y = cum_dose_pp, color = county, na.rm = TRUE)) +
+  geom_line() + geom_text(data=subset(covid_county, date=="2023-05-09"), aes(label=county),hjust=-.1) +
+  scale_x_date(name="Date", limits = as.Date(c("2020-12-09", "2023-09-09"))) +
+  scale_y_continuous(name="Cumulative Total Dose per Population", breaks = seq(0,3,by=1)) + 
+  theme(legend.position="none") +
+  ggtitle("Figure 2. Cumulative Total Doses per Population ")
+```
+
+```{r}
+#| output: false
+# Daily Cases, Deaths, Doses from 2020-01-01 to 2023-05-13
+ax <- list(
+  title = "",
+  zeroline = FALSE,
+  showline = FALSE,
+  showticklabels = FALSE
+)
+fig1 <- plot_ly(covid_CA, x=~date, y=~cases, name="cases", type="scatter", mode="lines") %>%
+  layout(xaxis = ax, yaxis = list(title = 'Cases'))
+
+fig2 <- plot_ly(covid_CA, x=~date, y=~deaths, name='deaths',type="scatter", mode="lines")%>%
+  layout(xaxis = ax, yaxis = list(title = 'Deaths'))
+
+fig3 <- plot_ly(covid_CA, x=~date, y=~total_doses, name='total doses',type="scatter", mode="lines") %>% layout(xaxis = list(title = 'Date'), yaxis = list(title = 'Doses'))
+
+fig <- subplot(fig1, fig2, fig3, nrows=3,heights=c(0.25,0.2,0.55),titleY = TRUE, titleX = TRUE)%>%
+  layout(hovermode="x unified", 
+         title="Figure 3. Daily Cases, Deaths, Doses from 2020-01-01 to 2023-05-13")
+fig
+```
+
+```{r}
+#| output: false
+#| warning: false
+#Population Density vs. Cummulative Cases
+covid_county1 %>% 
+  plot_ly(x = ~pop_density, y = ~cumulative_cases, 
+          type = "scatter", mode = 'markers', color = ~county,
+          size = ~population, sizes = c(5, 70), marker = list(sizemode='diameter', opacity=0.5))%>%
+  layout(title="Figure 4. Population Density vs. Cummulative Cases by 2023-05-09",
+         xaxis = list(title = 'Population density'), 
+         yaxis = list(title = 'Cummulative cases'))
+```
+
+```{r}
+#| output: false
+#| warning: false
+# Area Median Income by Percent Fully Vaccinated
+fv <- covid_county1 %>% lm(percent_vacc~AMI,.) %>% fitted.values()
+  
+plot_ly(covid_county1, x = ~AMI, y = ~percent_vacc, mode="markers", text=~county) %>%
+  add_markers(y = ~percent_vacc) %>%
+  add_trace(x = ~AMI, y = fv, mode="lines") %>%
+  layout(title="Figure 5. Area Median Income by Percent Fully Vaccinated by 2023-05-09",
+         xaxis = list(title = 'Area Median Income ($)'), 
+         yaxis = list(title = 'Percent Fully Vaccinated'),
+         showlegend=FALSE)
+```
